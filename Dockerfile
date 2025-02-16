@@ -2,10 +2,10 @@
 FROM python:3.9-slim
 
 # Set a working directory inside the container
-WORKDIR .
+WORKDIR /app
 
 # Copy the local files to the container
-COPY requirements.txt ./
+COPY . /app
 
 # Install dependencies
 RUN pip install --no-cache-dir -r requirements.txt
