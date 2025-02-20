@@ -8,7 +8,7 @@ WORKDIR /app
 COPY . /app
 
 # Install dependencies
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir --upgrade pip -r requirements.txt
 
 # Expose a port if your bot is running a web server (optional, e.g., for webhook handling)
 EXPOSE 8080

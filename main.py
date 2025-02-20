@@ -1,64 +1,59 @@
+import asyncio
 import logging
-from uuid import uuid4
+from contextlib import asynccontextmanager
 
-import firebase_admin
-from telegram import Update, InlineQueryResultArticle, InputTextMessageContent
-from telegram.constants import ParseMode
-from telegram.ext import Application, ContextTypes, InlineQueryHandler
+import uvicorn
+from fastapi import FastAPI, Request
+from telegram import Update
 
-from services.api_service import get_random_quote
+from services.bot_service import BotService
 from services.env_service import get_env_var
-from services.stats_service import StatsService
 
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     level=logging.INFO
 )
 logging.getLogger("httpx").setLevel(logging.WARNING)
+logger = logging.getLogger(__name__)
 
-default_app = firebase_admin.initialize_app()
-
-
-async def inline_query(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Handle the inline query. This is run when you type: @botusername <query>"""
-    try:
-        users = StatsService.get_users()
-        players_text = '<b>Игроки:</b>\n'
-        for usr in users:
-            players_text += f'<a href="tg://user?id={usr["id"]}">@{usr["username"]}</a>\n'
-    except Exception as e:
-        players_text = 'Сервер не отвечает('
-
-    quote = get_random_quote()
-    print(quote)
-    quote_text = f'<blockquote>{quote["quoteText"]}</blockquote>\n<i><b>©{quote["quoteAuthor"] or "Аноним"}</b></i>'
-
-    results = [
-        InlineQueryResultArticle(
-            id=str(uuid4()),
-            title="Игроки",
-            input_message_content=InputTextMessageContent(players_text, parse_mode=ParseMode.HTML),
-            thumbnail_url='https://cdn-icons-png.flaticon.com/512/1409/1409029.png'
-        ),
-        InlineQueryResultArticle(
-            id=str(uuid4()),
-            title="Цитата для брата",
-            input_message_content=InputTextMessageContent(quote_text, parse_mode=ParseMode.HTML),
-            thumbnail_url='https://cdn-icons-png.flaticon.com/128/2190/2190622.png'
-        ),
-    ]
-
-    await update.inline_query.answer(results, cache_time=0)
+bot_app = BotService.run_telegram_bot()
 
 
-def main() -> None:
-    bot_token = get_env_var("BOT_TOKEN")
-    application = Application.builder().token(bot_token).build()
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Set the webhook when the app starts"""
+    WEBHOOK_URL = get_env_var("WEBHOOK_URL")
+    logger.info(f"Setting webhook to {WEBHOOK_URL}")
 
-    application.add_handler(InlineQueryHandler(callback=inline_query))
+    await bot_app.bot.set_webhook(WEBHOOK_URL)
+    yield
 
-    # Start the Bot
-    application.run_polling()
+
+app = FastAPI(lifespan=lifespan)
+
+
+@app.post("/")
+async def webhook(request: Request):
+    """Handle incoming Telegram updates"""
+    data = await request.json()
+    update = Update.de_json(data, bot_app.bot)
+    await bot_app.process_update(update)
+    return {"status": "ok"}
+
+
+@app.get("/")
+def root():
+    """Root endpoint for testing"""
+    return {"message": "Bot is running!"}
+
+
+def main():
+    """Start the webhook server"""
+    PORT = int(get_env_var("PORT", 8080))
+
+    logger.info(f"Starting bot on port {PORT}...")
+
+    uvicorn.run(app, port=PORT)
 
 
 if __name__ == '__main__':
