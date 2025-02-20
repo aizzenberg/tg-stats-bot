@@ -53,7 +53,7 @@ def main():
 
     logger.info(f"Starting bot on port {PORT}...")
 
-    uvicorn.run(app, port=PORT)
+    uvicorn.run(app, host='0.0.0.0', port=PORT)
 
 
 if __name__ == '__main__':
